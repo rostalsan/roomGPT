@@ -16,6 +16,10 @@ import downloadPhoto from "../utils/downloadPhoto";
 import DropDown from "../components/DropDown";
 import { roomType, rooms, themeType, themes } from "../utils/dropdownTypes";
 import { GenerateResponseData } from "./api/generate";
+import { useSession, signIn } from "next-auth/react";
+import useSWR from "swr";
+import { Rings } from "react-loader-spinner";
+import getRemainingTime from "../utils/getRemainingTime";
 
 // Configuration for the uploader
 const uploader = Uploader({
@@ -23,26 +27,6 @@ const uploader = Uploader({
     ? process.env.NEXT_PUBLIC_UPLOAD_API_KEY
     : "free",
 });
-const options = {
-  maxFileCount: 1,
-  mimeTypes: ["image/jpeg", "image/png", "image/jpg"],
-  editor: { images: { crop: false } },
-  styles: {
-    colors: {
-      primary: "#2563EB", // Primary buttons & links
-      error: "#d23f4d", // Error messages
-      shade100: "#fff", // Standard text
-      shade200: "#fffe", // Secondary button text
-      shade300: "#fffd", // Secondary button text (hover)
-      shade400: "#fffc", // Welcome text
-      shade500: "#fff9", // Modal close button
-      shade600: "#fff7", // Border
-      shade700: "#fff2", // Progress indicator background
-      shade800: "#fff1", // File item background
-      shade900: "#ffff", // Various (draggable crop buttons, etc.)
-    },
-  },
-};
 
 const Home: NextPage = () => {
   const [originalPhoto, setOriginalPhoto] = useState<string | null>(null);
@@ -54,6 +38,37 @@ const Home: NextPage = () => {
   const [photoName, setPhotoName] = useState<string | null>(null);
   const [theme, setTheme] = useState<themeType>("Modern");
   const [room, setRoom] = useState<roomType>("Living Room");
+
+  const fetcher = (url: string) => fetch(url).then((res) => res.json());
+  const { data, mutate } = useSWR("/api/remaining", fetcher);
+  const { data: session, status } = useSession();
+  const { hours, minutes } = getRemainingTime();
+
+  const options = {
+    maxFileCount: 1,
+    mimeTypes: ["image/jpeg", "image/png", "image/jpg"],
+    editor: { images: { crop: false } },
+    styles: {
+      colors: {
+        primary: "#2563EB", // Primary buttons & links
+        error: "#d23f4d", // Error messages
+        shade100: "#fff", // Standard text
+        shade200: "#fffe", // Secondary button text
+        shade300: "#fffd", // Secondary button text (hover)
+        shade400: "#fffc", // Welcome text
+        shade500: "#fff9", // Modal close button
+        shade600: "#fff7", // Border
+        shade700: "#fff2", // Progress indicator background
+        shade800: "#fff1", // File item background
+        shade900: "#ffff", // Various (draggable crop buttons, etc.)
+      },
+    },
+    onValidate: async (file: File): Promise<undefined | string> => {
+      return data.remainingGenerations === 0
+        ? `No more generations left. Try again in ${hours} hours and ${minutes} minutes.`
+        : undefined;
+    },
+  };
 
   const UploadDropZone = () => (
     <UploadDropzone
@@ -73,7 +88,7 @@ const Home: NextPage = () => {
   );
 
   async function generatePhoto(fileUrl: string) {
-    await new Promise((resolve) => setTimeout(resolve, 200)); // TODO: See if I even need this
+    await new Promise((resolve) => setTimeout(resolve, 200));
     setLoading(true);
     const res = await fetch("/api/generate", {
       method: "POST",
@@ -84,10 +99,10 @@ const Home: NextPage = () => {
     });
 
     let response = (await res.json()) as GenerateResponseData;
-    console.log("res from replicate", response);
     if (res.status !== 200) {
       setError(response as any);
     } else {
+      mutate();
       const rooms =
         (JSON.parse(localStorage.getItem("rooms") || "[]") as string[]) || [];
       rooms.push(response.id);
@@ -104,34 +119,72 @@ const Home: NextPage = () => {
       <Head>
         <title>RoomGPT</title>
       </Head>
-      <Header />
+      <Header photo={session?.user?.image || undefined} />
       <main className="flex flex-1 w-full flex-col items-center justify-center text-center px-4 mt-4 sm:mb-0 mb-8">
         <a
-          href="https://dub.sh/hassan-newsletter"
+          href="https://twitter.com/nutlope/status/1633529333565251595"
           target="_blank"
           rel="noreferrer"
           className="border border-gray-700 rounded-2xl py-2 px-4 text-gray-400 text-sm my-6 duration-300 ease-in-out hover:text-gray-300 transition"
         >
-          <span className="font-semibold">Subscribe to my newsletter</span> to
-          learn how I built roomGPT
+          <span className="font-semibold">728,000 rooms</span> generated and
+          counting
         </a>
         <h1 className="mx-auto max-w-4xl font-display text-4xl font-bold tracking-normal text-slate-100 sm:text-6xl mb-5">
           Generate your <span className="text-blue-600">dream</span> room
         </h1>
-        {!restoredImage && (
+        {status === "authenticated" && data && !restoredImage && (
           <p className="text-gray-400">
-            <span className="font-bold text-gray-300">Note:</span> We're
-            temporarily{" "}
-            <span className="font-bold text-gray-300">
-              limiting generations to 3 per day
+            You have{" "}
+            <span className="font-semibold text-gray-300">
+              {data.remainingGenerations} generations
             </span>{" "}
-            because of high traffic.
+            left today. Your generations will renew in{" "}
+            <span className="font-semibold text-gray-300">
+              {hours} hours and {minutes} minutes.
+            </span>
           </p>
         )}
         <ResizablePanel>
           <AnimatePresence mode="wait">
             <motion.div className="flex justify-between items-center w-full flex-col mt-4">
-              {!restoredImage && (
+              {restoredImage && (
+                <div>
+                  Here's your remodeled <b>{room.toLowerCase()}</b> in the{" "}
+                  <b>{theme.toLowerCase()}</b> theme!{" "}
+                </div>
+              )}
+              <div
+                className={`${
+                  restoredLoaded ? "visible mt-6 -ml-8" : "invisible"
+                }`}
+              >
+                <Toggle
+                  className={`${restoredLoaded ? "visible mb-6" : "invisible"}`}
+                  sideBySide={sideBySide}
+                  setSideBySide={(newVal) => setSideBySide(newVal)}
+                />
+              </div>
+              {restoredLoaded && sideBySide && (
+                <CompareSlider
+                  original={originalPhoto!}
+                  restored={restoredImage!}
+                />
+              )}
+              {status === "loading" ? (
+                <div className="max-w-[670px] h-[250px] flex justify-center items-center">
+                  <Rings
+                    height="100"
+                    width="100"
+                    color="white"
+                    radius="6"
+                    wrapperStyle={{}}
+                    wrapperClass=""
+                    visible={true}
+                    ariaLabel="rings-loading"
+                  />
+                </div>
+              ) : status === "authenticated" && !originalPhoto ? (
                 <>
                   <div className="space-y-4 w-full max-w-sm">
                     <div className="flex mt-3 items-center space-x-3">
@@ -184,32 +237,31 @@ const Home: NextPage = () => {
                       </p>
                     </div>
                   </div>
+                  <UploadDropZone />
                 </>
+              ) : (
+                !originalPhoto && (
+                  <div className="h-[250px] flex flex-col items-center space-y-6 max-w-[670px] -mt-8">
+                    <div className="max-w-xl text-gray-300">
+                      Sign in below with Google to create a free account and
+                      redesign your room today. You will be able to do 3
+                      redesigns per day for free.
+                    </div>
+                    <button
+                      onClick={() => signIn("google")}
+                      className="bg-gray-200 text-black font-semibold py-3 px-6 rounded-2xl flex items-center space-x-2"
+                    >
+                      <Image
+                        src="/google.png"
+                        width={20}
+                        height={20}
+                        alt="google's logo"
+                      />
+                      <span>Sign in with Google</span>
+                    </button>
+                  </div>
+                )
               )}
-              {restoredImage && (
-                <div>
-                  Here's your remodeled <b>{room.toLowerCase()}</b> in the{" "}
-                  <b>{theme.toLowerCase()}</b> theme!{" "}
-                </div>
-              )}
-              <div
-                className={`${
-                  restoredLoaded ? "visible mt-6 -ml-8" : "invisible"
-                }`}
-              >
-                <Toggle
-                  className={`${restoredLoaded ? "visible mb-6" : "invisible"}`}
-                  sideBySide={sideBySide}
-                  setSideBySide={(newVal) => setSideBySide(newVal)}
-                />
-              </div>
-              {restoredLoaded && sideBySide && (
-                <CompareSlider
-                  original={originalPhoto!}
-                  restored={restoredImage!}
-                />
-              )}
-              {!originalPhoto && <UploadDropZone />}
               {originalPhoto && !restoredImage && (
                 <Image
                   alt="original photo"
@@ -262,7 +314,7 @@ const Home: NextPage = () => {
                   role="alert"
                 >
                   <div className="bg-red-500 text-white font-bold rounded-t px-4 py-2">
-                    Please try again in 24 hours
+                    Please try again later.
                   </div>
                   <div className="border border-t-0 border-red-400 rounded-b bg-red-100 px-4 py-3 text-red-700">
                     {error}

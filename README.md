@@ -42,6 +42,17 @@ Then, run the application in the command line and it will be available at `http:
 npm run dev
 ```
 
+## Auth setup
+
+1. Use `openssl rand -base64 32` to generate NEXTAUTH_SECRET
+2. Add DB URL and SHADOW DB URL from Neon
+3. Create a new project in console.cloud.google.com
+4. Click configure consent screen in API credentials page and click external
+5. Add an app name, do not upload logo, add authorized domain
+6. Publish app
+7. Create credentials -> Oauth client ID
+8. Run npx prisma db push && prisma migrate dev && prisma generate
+
 ## One-Click Deploy
 
 Deploy the example using [Vercel](https://vercel.com?utm_source=github&utm_medium=readme&utm_campaign=vercel-examples):
